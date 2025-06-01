@@ -1,55 +1,53 @@
 import express from 'express';
+import pg from 'pg';
 import dotenv from 'dotenv';
-import pkg from 'pg';
-const { Pool } = pkg;
+import cors from 'cors';
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(cors());
+app.use(express.json());
 
-// PostgreSQL connection pool
-const pool = new Pool({
+const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false // Required for Supabase SSL
-  }
+    rejectUnauthorized: false,
+  },
 });
 
-// Root route for Render health check
-app.get('/', (req, res) => {
-  res.send('QR Tracker backend is running!');
-});
-
-// Example tracking endpoint
 app.get('/track', async (req, res) => {
-  const { brand, qr_id, fingerprint } = req.query;
+  const { qr_id, fingerprint, redirect } = req.query;
 
-  if (!brand || !qr_id || !fingerprint) {
-    return res.status(400).json({ message: 'Missing parameters' });
+  if (!qr_id || !fingerprint || !redirect) {
+    return res.status(400).send('Missing required parameters: qr_id, fingerprint, redirect');
   }
 
   try {
-    const existing = await pool.query(
-      'SELECT * FROM scans WHERE brand = $1 AND qr_id = $2 AND fingerprint = $3',
-      [brand, qr_id, fingerprint]
+    // Check if this device already scanned this QR
+    const existingScan = await pool.query(
+      'SELECT * FROM scans WHERE qr_id = $1 AND fingerprint = $2',
+      [qr_id, fingerprint]
     );
 
-    if (existing.rows.length === 0) {
+    if (existingScan.rows.length === 0) {
+      // Insert new scan record
       await pool.query(
-        'INSERT INTO scans (brand, qr_id, fingerprint) VALUES ($1, $2, $3)',
-        [brand, qr_id, fingerprint]
+        'INSERT INTO scans (qr_id, fingerprint) VALUES ($1, $2)',
+        [qr_id, fingerprint]
       );
     }
 
-    res.redirect(`https://${brand}.com`); // Or your real brand URL
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    // Redirect user to the brand website URL
+    res.redirect(redirect);
+  } catch (error) {
+    console.error('Error tracking scan:', error);
+    res.status(500).send('Internal server error');
   }
 });
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`QR Tracker backend is running on port ${PORT}`);
 });
