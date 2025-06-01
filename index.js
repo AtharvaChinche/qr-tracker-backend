@@ -41,5 +41,9 @@ app.get('/track', async (req, res) => {
     res.status(500).send('Server error');
   }
 });
+app.get('/', (req, res) => {
+  res.send('QR Tracker backend is running!');
+});
+
 
 app.listen(port, () => console.log(`Server running on port ${port}`));
